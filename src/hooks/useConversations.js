@@ -11,7 +11,7 @@ export const useConversations = () => {
   const fetchConversations = async () => {
     setIsLoading(true);
     dispatch({ type: 'SET_LOADING', payload: true });
-    
+
     try {
       const result = await conversationService.getConversations();
       if (result.success) {
@@ -35,7 +35,14 @@ export const useConversations = () => {
         toast.success(MESSAGES.CONVERSATION_CREATED);
         return result.data;
       } else {
-        toast.error(result.error);
+        // Handle error: if result.error is an object/array, stringify or show a generic message
+        let errorMsg = result.error;
+        if (Array.isArray(errorMsg)) {
+          errorMsg = errorMsg.map(e => e.msg || JSON.stringify(e)).join(', ');
+        } else if (typeof errorMsg === 'object') {
+          errorMsg = errorMsg.msg || JSON.stringify(errorMsg);
+        }
+        toast.error(errorMsg || MESSAGES.SOMETHING_WENT_WRONG);
         return null;
       }
     } catch (error) {

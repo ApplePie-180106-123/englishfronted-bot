@@ -1,23 +1,34 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Plus, MessageSquare, Trash2 } from 'lucide-react';
 import { useConversations } from '../../hooks/useConversations';
 import { formatters } from '../../utils/formatters';
 import Button from '../common/Button';
-import Modal from '../common/Modal';
-import CreateConversationForm from '../conversation/CreateConversationForm';
+import { useAuth } from '../../context/AuthContext';
 
 const Sidebar = () => {
   const location = useLocation();
-  const { conversations, deleteConversation, isLoading } = useConversations();
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const navigate = useNavigate();
+  const { conversations, deleteConversation, isLoading, createConversation } = useConversations();
+  const { user } = useAuth();
 
   const handleDeleteConversation = async (conversationId, e) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (window.confirm('Are you sure you want to delete this conversation?')) {
       await deleteConversation(conversationId);
+    }
+  };
+
+  const handleCreateConversation = async () => {
+    if (!user || !user.id) {
+      // Optionally show an error toast here
+      return;
+    }
+    const conversation = await createConversation({ title: 'new title', user_id: user.id });
+    if (conversation && conversation.id) {
+      navigate(`/chat/${conversation.id}`);
     }
   };
 
@@ -26,19 +37,19 @@ const Sidebar = () => {
       <div className="w-64 bg-gray-50 border-r border-gray-200 h-full flex flex-col">
         <div className="p-4 border-b border-gray-200">
           <Button
-            onClick={() => setShowCreateModal(true)}
+            onClick={handleCreateConversation}
             className="w-full flex items-center justify-center space-x-2"
           >
             <Plus className="h-4 w-4" />
             <span>New Conversation</span>
           </Button>
         </div>
-        
+
         <div className="flex-1 overflow-y-auto p-4">
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
             Conversations
           </h2>
-          
+
           {isLoading ? (
             <div className="text-center py-4">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
@@ -54,9 +65,8 @@ const Sidebar = () => {
                 <Link
                   key={conversation.id}
                   to={`/chat/${conversation.id}`}
-                  className={`block p-3 rounded-lg hover:bg-gray-100 transition-colors group ${
-                    location.pathname === `/chat/${conversation.id}` ? 'bg-blue-50 border-blue-200' : ''
-                  }`}
+                  className={`block p-3 rounded-lg hover:bg-gray-100 transition-colors group ${location.pathname === `/chat/${conversation.id}` ? 'bg-blue-50 border-blue-200' : ''
+                    }`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
@@ -85,17 +95,6 @@ const Sidebar = () => {
           )}
         </div>
       </div>
-
-      <Modal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Create New Conversation"
-      >
-        <CreateConversationForm
-          onSuccess={() => setShowCreateModal(false)}
-          onCancel={() => setShowCreateModal(false)}
-        />
-      </Modal>
     </>
   );
 };
