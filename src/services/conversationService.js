@@ -13,10 +13,10 @@ export const conversationService = {
       };
     }
   },
-  
-  getConversations: async () => {
+
+  getConversations: async (userId) => {
     try {
-      const response = await axiosClient.get(API_ENDPOINTS.CONVERSATIONS);
+      const response = await axiosClient.get(`/conversation/${userId}`);
       return { success: true, data: response.data };
     } catch (error) {
       return {
@@ -25,7 +25,7 @@ export const conversationService = {
       };
     }
   },
-  
+
   deleteConversation: async (conversationId) => {
     try {
       await axiosClient.delete(API_ENDPOINTS.DELETE_CONVERSATION(conversationId));

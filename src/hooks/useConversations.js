@@ -3,17 +3,20 @@ import { useApp } from '../context/AppContext';
 import { conversationService } from '../services/conversationService';
 import { MESSAGES } from '../constants/messages';
 import toast from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
 
 export const useConversations = () => {
   const { conversations, dispatch } = useApp();
   const [isLoading, setIsLoading] = useState(false);
+  const { user } = useAuth();
 
   const fetchConversations = async () => {
+    if (!user || !user.id) return;
     setIsLoading(true);
     dispatch({ type: 'SET_LOADING', payload: true });
 
     try {
-      const result = await conversationService.getConversations();
+      const result = await conversationService.getConversations(user.id);
       if (result.success) {
         dispatch({ type: 'SET_CONVERSATIONS', payload: result.data });
       } else {

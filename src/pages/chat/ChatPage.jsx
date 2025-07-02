@@ -12,7 +12,7 @@ const ChatPage = () => {
   const { conversations } = useApp();
   const { messages, isLoading, isSending, sendMessage } = useMessages(conversationId);
 
-  const currentConversation = conversations.find(conv => conv.id === conversationId);
+  const currentConversation = conversations.find(conv => conv._id === conversationId);
 
   useEffect(() => {
     if (!conversationId) {
@@ -22,7 +22,7 @@ const ChatPage = () => {
 
   const handleSendMessage = async (messageData) => {
     if (!conversationId) return;
-    
+
     await sendMessage(messageData);
   };
 

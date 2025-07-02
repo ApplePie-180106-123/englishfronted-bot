@@ -23,7 +23,7 @@ const appReducer = (state, action) => {
     case 'REMOVE_CONVERSATION':
       return {
         ...state,
-        conversations: state.conversations.filter(conv => conv.id !== action.payload),
+        conversations: state.conversations.filter(conv => conv._id !== action.payload),
       };
     case 'SET_CURRENT_CONVERSATION':
       return { ...state, currentConversation: action.payload };
@@ -47,6 +47,8 @@ const appReducer = (state, action) => {
           ],
         },
       };
+    case 'CLEAR_MESSAGES':
+      return { ...state, messages: {} };
     default:
       return state;
   }
@@ -55,9 +57,13 @@ const appReducer = (state, action) => {
 export const AppProvider = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
 
+  // Add clearMessages to context
+  const clearMessages = () => dispatch({ type: 'CLEAR_MESSAGES' });
+
   const value = {
     ...state,
     dispatch,
+    clearMessages, // expose clearMessages
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

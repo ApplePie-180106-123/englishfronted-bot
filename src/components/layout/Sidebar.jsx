@@ -5,12 +5,14 @@ import { useConversations } from '../../hooks/useConversations';
 import { formatters } from '../../utils/formatters';
 import Button from '../common/Button';
 import { useAuth } from '../../context/AuthContext';
+import { useApp } from '../../context/AppContext';
 
 const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { conversations, deleteConversation, isLoading, createConversation } = useConversations();
   const { user } = useAuth();
+  const { clearMessages } = useApp();
 
   const handleDeleteConversation = async (conversationId, e) => {
     e.preventDefault();
@@ -27,8 +29,9 @@ const Sidebar = () => {
       return;
     }
     const conversation = await createConversation({ title: 'new title', user_id: user.id });
-    if (conversation && conversation.id) {
-      navigate(`/chat/${conversation.id}`);
+    if (conversation && conversation._id) {
+      clearMessages(); // Clear all messages state before navigating
+      navigate(`/chat/${conversation._id}`);
     }
   };
 
@@ -63,9 +66,9 @@ const Sidebar = () => {
             <div className="space-y-2">
               {conversations.map((conversation) => (
                 <Link
-                  key={conversation.id}
-                  to={`/chat/${conversation.id}`}
-                  className={`block p-3 rounded-lg hover:bg-gray-100 transition-colors group ${location.pathname === `/chat/${conversation.id}` ? 'bg-blue-50 border-blue-200' : ''
+                  key={conversation._id}
+                  to={`/chat/${conversation._id}`}
+                  className={`block p-3 rounded-lg hover:bg-gray-100 transition-colors group ${location.pathname === `/chat/${conversation._id}` ? 'bg-blue-50 border-blue-200' : ''
                     }`}
                 >
                   <div className="flex items-start justify-between">
@@ -83,7 +86,7 @@ const Sidebar = () => {
                       </p>
                     </div>
                     <button
-                      onClick={(e) => handleDeleteConversation(conversation.id, e)}
+                      onClick={(e) => handleDeleteConversation(conversation._id, e)}
                       className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 text-red-600 transition-all"
                     >
                       <Trash2 className="h-4 w-4" />

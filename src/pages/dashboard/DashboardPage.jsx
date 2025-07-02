@@ -68,7 +68,7 @@ const DashboardPage = () => {
               Recent Conversations
             </h2>
           </div>
-          
+
           <div className="p-6">
             {isLoading ? (
               <LoadingSpinner className="py-8" />
@@ -89,8 +89,8 @@ const DashboardPage = () => {
               <div className="space-y-4">
                 {recentConversations.map((conversation) => (
                   <Link
-                    key={conversation.id}
-                    to={`/chat/${conversation.id}`}
+                    key={conversation._id}
+                    to={`/chat/${conversation._id}`}
                     className="block p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
                   >
                     <div className="flex items-start justify-between">
@@ -111,7 +111,7 @@ const DashboardPage = () => {
                     </div>
                   </Link>
                 ))}
-                
+
                 {conversations.length > 5 && (
                   <div className="text-center pt-4">
                     <Button
