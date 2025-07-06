@@ -7,6 +7,7 @@ import MessageList from '../../components/message/MessageList';
 import MessageInput from '../../components/message/MessageInput';
 import { MessageSquare, Pencil } from 'lucide-react';
 import Modal from '../../components/common/Modal';
+import VoiceChatModal from '../../components/message/VoiceChatModal';
 
 const ChatPage = () => {
   const { conversationId } = useParams();
@@ -19,6 +20,7 @@ const ChatPage = () => {
   const [imagePreview, setImagePreview] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [voiceModalOpen, setVoiceModalOpen] = useState(false);
 
   useEffect(() => {
     if (!conversationId) {
@@ -50,6 +52,25 @@ const ChatPage = () => {
       setError("Failed to upload image");
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Voice chat handler: send user text to backend, get bot reply
+  const handleVoiceChat = async (userText) => {
+    if (!conversationId) return 'No conversation selected.';
+    try {
+      const result = await sendMessage({
+        content: userText,
+        sender_id: 'user',
+        message_type: 'text',
+      });
+      if (result && result.content) {
+        return result.content;
+      } else {
+        return 'Sorry, I could not get a reply from the bot.';
+      }
+    } catch (err) {
+      return 'Sorry, there was a problem contacting the bot.';
     }
   };
 
@@ -137,7 +158,16 @@ const ChatPage = () => {
         <MessageList messages={messages} isLoading={isLoading} />
 
         {/* Message Input */}
-        <MessageInput onSendMessage={handleSendMessage} isLoading={isSending} />
+        <MessageInput
+          onSendMessage={handleSendMessage}
+          isLoading={isSending}
+          onVoiceChat={(userText) => handleVoiceChat(userText)}
+        />
+        <VoiceChatModal
+          isOpen={voiceModalOpen}
+          onClose={() => setVoiceModalOpen(false)}
+          onSendToBackend={handleVoiceChat}
+        />
       </div>
     </Layout>
   );
