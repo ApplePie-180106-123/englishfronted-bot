@@ -22,9 +22,18 @@ const VoiceChatModal = ({ isOpen, onClose, onSendToBackend }) => {
     const [isBotSpeaking, setIsBotSpeaking] = useState(false);
     const [error, setError] = useState(null);
     const [botError, setBotError] = useState(null);
+    const [emptyPrompted, setEmptyPrompted] = useState(false);
+    const [speechRecognitionError, setSpeechRecognitionError] = useState(null);
+    const [showManualInput, setShowManualInput] = useState(false);
+    const [manualInput, setManualInput] = useState('');
+    const [speechErrorCount, setSpeechErrorCount] = useState(0);
     const synthRef = useRef(window.speechSynthesis);
     const listeningRef = useRef(false);
 
+    // Detect Linux OS for warning
+    const isLinux = typeof window !== 'undefined' && window.navigator && window.navigator.userAgent.toLowerCase().includes('linux');
+
+    // React SpeechRecognition onEnd
     const {
         transcript,
         listening,
@@ -35,14 +44,13 @@ const VoiceChatModal = ({ isOpen, onClose, onSendToBackend }) => {
             console.log('[VoiceChatModal] onEnd triggered. Stage:', stage, 'Transcript:', transcript);
             listeningRef.current = false;
             if (stage === 'user') {
-                setUserText(transcript);
-                setStage('waiting');
-                setBotError(null);
                 if (transcript.trim()) {
+                    setUserText(transcript);
+                    setStage('waiting');
+                    setBotError(null);
+                    setEmptyPrompted(false);
                     try {
-                        console.log('[VoiceChatModal] Sending transcript to backend:', transcript.trim());
                         const botReply = await onSendToBackend(transcript.trim());
-                        console.log('[VoiceChatModal] Bot reply from backend:', botReply);
                         if (!botReply || botReply.toLowerCase().includes('sorry')) {
                             setBotError(botReply || 'No reply from bot.');
                             setBotText('');
@@ -54,15 +62,19 @@ const VoiceChatModal = ({ isOpen, onClose, onSendToBackend }) => {
                             speakBot(botReply);
                         }
                     } catch (e) {
-                        console.error('[VoiceChatModal] Error getting bot reply:', e);
                         setBotError('Failed to get bot reply.');
                         setBotText('');
                         setStage('bot');
                         setIsBotSpeaking(false);
                     }
-                } else {
+                } else if (!emptyPrompted) {
+                    setEmptyPrompted(true);
+                    setUserText('');
                     setStage('user');
-                    startListening();
+                    setTimeout(() => startListening(), 500);
+                } else {
+                    setBotError('No speech detected. Please try again.');
+                    setShowManualInput(true); // Show manual input after 2nd empty
                 }
             }
         }
@@ -75,11 +87,17 @@ const VoiceChatModal = ({ isOpen, onClose, onSendToBackend }) => {
         setUserText('');
         setStage('user');
         setError(null);
+        setSpeechRecognitionError(null);
+        setShowManualInput(false);
+        setSpeechErrorCount(0);
         try {
             SpeechRecognition.startListening({ continuous: false, language: 'en-US' });
             listeningRef.current = true;
         } catch (e) {
             setError('Microphone access denied or unavailable.');
+            setSpeechRecognitionError('Microphone access denied or unavailable.');
+            setSpeechErrorCount((c) => c + 1);
+            if (speechErrorCount + 1 >= 2) setShowManualInput(true);
             console.error('[VoiceChatModal] Error starting listening:', e);
         }
     };
@@ -94,11 +112,7 @@ const VoiceChatModal = ({ isOpen, onClose, onSendToBackend }) => {
             console.log('[VoiceChatModal] SpeechSynthesisUtterance ended');
             setIsBotSpeaking(false);
             setStage('user');
-            // Only start listening if modal is still open and not already listening
-            // Prevent infinite loop: do NOT start listening if already listening or if stage is not 'user'
-            if (isOpen && !listeningRef.current && stage === 'user') {
-                startListening();
-            }
+            startListening();
         };
         synthRef.current.speak(utter);
     };
@@ -157,83 +171,54 @@ const VoiceChatModal = ({ isOpen, onClose, onSendToBackend }) => {
         }
     }, [error, botError]);
 
-    // Track if we've already prompted the user once for empty transcript
-    const [emptyPrompted, setEmptyPrompted] = useState(false);
-    // Track if we should show manual input after two failures
-    const [showManualInput, setShowManualInput] = useState(false);
-    // Track number of empty transcript prompts
-    const [emptyPromptCount, setEmptyPromptCount] = useState(0);
-
-    // Reset emptyPromptCount when modal opens or user starts speaking
-    useEffect(() => {
-        if (isOpen) setEmptyPromptCount(0);
-    }, [isOpen]);
-    useEffect(() => {
-        if (listening) setEmptyPromptCount(0);
-    }, [listening]);
-
     // Native onend fallback for Linux/buggy browsers
     useEffect(() => {
         if (!window.SpeechRecognition && !window.webkitSpeechRecognition) return;
         const recognition = SpeechRecognition.browserSupportsSpeechRecognition
             ? SpeechRecognition.getRecognition() : null;
         if (!recognition) return;
-        let lastTranscript = '';
-        recognition.onresult = (event) => {
-            let interim = '';
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                interim += event.results[i][0].transcript;
-            }
-            lastTranscript = interim;
-            // Update transcript and userText directly for Linux compatibility
-            setUserText(interim);
-            if (interim && interim.trim()) {
-                setStage('waiting');
-                setBotError(null);
-                setEmptyPromptCount(0);
-                onSendToBackend(interim.trim()).then(botReply => {
-                    if (!botReply || botReply.toLowerCase().includes('sorry')) {
-                        setBotError(botReply || 'No reply from bot.');
+        const nativeOnEnd = async (event) => {
+            console.log('[VoiceChatModal] [NATIVE] recognition.onend fallback', event, 'Stage:', stage, 'Transcript:', transcript);
+            if (stage === 'user') {
+                if (transcript && transcript.trim()) {
+                    setUserText(transcript);
+                    setStage('waiting');
+                    setBotError(null);
+                    setEmptyPrompted(false);
+                    try {
+                        const botReply = await onSendToBackend(transcript.trim());
+                        if (!botReply || botReply.toLowerCase().includes('sorry')) {
+                            setBotError(botReply || 'No reply from bot.');
+                            setBotText('');
+                            setStage('bot');
+                            setIsBotSpeaking(false);
+                        } else {
+                            setBotText(botReply);
+                            setStage('bot');
+                            speakBot(botReply);
+                        }
+                    } catch (e) {
+                        setBotError('Failed to get bot reply.');
                         setBotText('');
                         setStage('bot');
                         setIsBotSpeaking(false);
-                    } else {
-                        setBotText(botReply);
-                        setStage('bot');
-                        speakBot(botReply);
                     }
-                }).catch(e => {
-                    setBotError('Failed to get bot reply.');
-                    setBotText('');
-                    setStage('bot');
-                    setIsBotSpeaking(false);
-                });
-            }
-        };
-        const nativeOnEnd = async (event) => {
-            if (stage === 'user') {
-                // Only trigger empty prompt if both transcript and lastTranscript are empty
-                if ((!lastTranscript || !lastTranscript.trim()) && (!transcript || !transcript.trim())) {
-                    if (emptyPromptCount === 0) {
-                        setEmptyPromptCount(1);
-                        setUserText('');
-                        setStage('user');
-                        setTimeout(() => startListening(), 500);
-                    } else if (emptyPromptCount === 1) {
-                        setEmptyPromptCount(2);
-                        setUserText('');
-                        setStage('user');
-                        setBotError('No speech detected. Please try again.');
-                    }
+                } else if (!emptyPrompted) {
+                    setEmptyPrompted(true);
+                    setUserText('');
+                    setStage('user');
+                    setTimeout(() => startListening(), 500);
+                } else {
+                    setBotError('No speech detected. Please try again.');
+                    setShowManualInput(true); // Show manual input after 2nd empty
                 }
             }
         };
         recognition.addEventListener('end', nativeOnEnd);
         return () => {
             recognition.removeEventListener('end', nativeOnEnd);
-            recognition.onresult = null;
         };
-    }, [stage, onSendToBackend, emptyPromptCount, transcript]);
+    }, [stage, transcript, onSendToBackend, emptyPrompted]);
 
     // Always show the latest transcript or userText in the subtitle area
     const displaySubtitle = transcript || userText || <span className="text-blue-300">Say something...</span>;
@@ -252,6 +237,11 @@ const VoiceChatModal = ({ isOpen, onClose, onSendToBackend }) => {
         };
         recognition.onerror = (event) => {
             console.error('[VoiceChatModal] recognition.onerror', event);
+            setSpeechRecognitionError(event.error || 'Speech recognition error');
+            SpeechRecognition.stopListening();
+            listeningRef.current = false;
+            setSpeechErrorCount((c) => c + 1);
+            if (speechErrorCount + 1 >= 2) setShowManualInput(true);
         };
         recognition.onaudioend = (event) => {
             console.log('[VoiceChatModal] recognition.onaudioend', event);
@@ -301,18 +291,16 @@ const VoiceChatModal = ({ isOpen, onClose, onSendToBackend }) => {
         }
     };
 
-    // Manual input fallback if transcript is always empty
-    const [manualInput, setManualInput] = useState('');
+    // Manual input send handler
     const handleManualInputSend = async () => {
         if (!manualInput.trim()) return;
         setUserText(manualInput);
         setStage('waiting');
         setBotError(null);
-        setEmptyPrompted(false);
+        setShowManualInput(false);
+        setManualInput('');
         try {
-            console.log('[VoiceChatModal] [ManualInput] Sending manual input to backend:', manualInput.trim());
             const botReply = await onSendToBackend(manualInput.trim());
-            console.log('[VoiceChatModal] [ManualInput] Bot reply from backend:', botReply);
             if (!botReply || botReply.toLowerCase().includes('sorry')) {
                 setBotError(botReply || 'No reply from bot.');
                 setBotText('');
@@ -324,13 +312,11 @@ const VoiceChatModal = ({ isOpen, onClose, onSendToBackend }) => {
                 speakBot(botReply);
             }
         } catch (e) {
-            console.error('[VoiceChatModal] [ManualInput] Error getting bot reply:', e);
             setBotError('Failed to get bot reply.');
             setBotText('');
             setStage('bot');
             setIsBotSpeaking(false);
         }
-        setManualInput('');
     };
 
     if (!isOpen) return null;
@@ -366,6 +352,13 @@ const VoiceChatModal = ({ isOpen, onClose, onSendToBackend }) => {
                 >
                     <X className="h-5 w-5 text-gray-500" />
                 </button>
+                {/* Linux warning */}
+                {isLinux && (
+                    <div className="w-full flex items-center justify-center bg-yellow-100 border-b border-yellow-300 py-2 px-4 text-yellow-800 text-sm font-semibold gap-2 animate-fade-in">
+                        <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                        Voice input may not work reliably on Linux browsers. If you have issues, use manual input or try a different browser/OS.
+                    </div>
+                )}
                 {/* Top: User speaking */}
                 <div className="flex-1 flex flex-col items-center justify-center px-8 py-6 bg-gradient-to-b from-blue-50 to-white relative">
                     <div className="flex flex-col items-center w-full">
@@ -373,53 +366,44 @@ const VoiceChatModal = ({ isOpen, onClose, onSendToBackend }) => {
                         <span className="text-blue-700 font-semibold text-lg mt-3">
                             {listening ? 'Listening...' : (stage === 'waiting' ? 'Processing...' : 'Speak to start')}
                         </span>
-                        {/* Subtitles: only hide if error/manual input is showing */}
-                        {emptyPromptCount < 2 && !(botError && stage === 'user' && emptyPromptCount === 1) && (
-                            <div className="w-full min-h-[2.5rem] bg-blue-50 rounded-lg px-4 py-2 text-blue-900 text-lg font-medium text-center shadow-inner animate-fade-in mt-4">
-                                {displaySubtitle}
-                            </div>
-                        )}
-                        {/* Error and Try Again for no speech detected (first failure) */}
-                        {botError && stage === 'user' && emptyPromptCount === 1 && (
-                            <>
-                                <div className="mt-2 text-red-600 text-sm">{botError}</div>
+                        <div className="w-full min-h-[2.5rem] bg-blue-50 rounded-lg px-4 py-2 text-blue-900 text-lg font-medium text-center shadow-inner animate-fade-in mt-4">
+                            {displaySubtitle}
+                        </div>
+                        {/* Manual input fallback UI */}
+                        {showManualInput && (
+                            <div className="mt-6 w-full flex flex-col items-center gap-3 animate-fade-in">
+                                <div className="text-blue-700 font-semibold">Voice input failed. Type your message below:</div>
+                                <input
+                                    className="w-full max-w-md px-4 py-2 border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-lg"
+                                    type="text"
+                                    value={manualInput}
+                                    onChange={e => setManualInput(e.target.value)}
+                                    placeholder="Type your message..."
+                                    autoFocus
+                                />
                                 <button
-                                    className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 transition"
+                                    className="mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 transition"
+                                    onClick={handleManualInputSend}
+                                    type="button"
+                                >
+                                    Send
+                                </button>
+                                <button
+                                    className="mt-1 px-3 py-1 text-blue-500 underline text-sm"
                                     onClick={() => {
-                                        setBotError(null);
-                                        setUserText('');
+                                        setShowManualInput(false);
+                                        setSpeechErrorCount(0);
+                                        setSpeechRecognitionError(null);
                                         setTimeout(() => startListening(), 200);
                                     }}
                                     type="button"
                                 >
-                                    Try Again
+                                    Try voice again
                                 </button>
-                            </>
-                        )}
-                        {/* Manual input fallback after two failures */}
-                        {botError && stage === 'user' && emptyPromptCount === 2 && (
-                            <>
-                                <div className="mt-2 text-red-600 text-sm">{botError}</div>
-                                <div className="mt-4 flex flex-col items-center gap-2">
-                                    <input
-                                        type="text"
-                                        className="w-full max-w-xs px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        placeholder="Type your message..."
-                                        value={manualInput}
-                                        onChange={e => setManualInput(e.target.value)}
-                                    />
-                                    <button
-                                        className="px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 transition"
-                                        onClick={handleManualInputSend}
-                                        type="button"
-                                    >
-                                        Send
-                                    </button>
-                                </div>
-                            </>
+                            </div>
                         )}
                         {/* TEMP: Manual send button for debugging */}
-                        {stage === 'user' && transcript && (
+                        {!showManualInput && stage === 'user' && transcript && (
                             <button
                                 className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 transition"
                                 onClick={handleManualSend}
@@ -431,7 +415,25 @@ const VoiceChatModal = ({ isOpen, onClose, onSendToBackend }) => {
                         {error && (
                             <div className="mt-4 text-red-600 text-sm flex items-center gap-2"><AlertTriangle className="h-4 w-4" />{error}</div>
                         )}
-                        {stage === 'waiting' && (
+                        {!showManualInput && speechRecognitionError && (
+                            <div className="mt-4 text-red-600 text-sm flex flex-col items-center">
+                                <span>{speechRecognitionError === 'not-allowed' ? 'Microphone access denied. Please check your browser settings.' : speechRecognitionError}</span>
+                                <button
+                                    className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 transition"
+                                    onClick={() => {
+                                        setSpeechRecognitionError(null);
+                                        setBotError(null);
+                                        setUserText('');
+                                        setEmptyPrompted(false);
+                                        setTimeout(() => startListening(), 200);
+                                    }}
+                                    type="button"
+                                >
+                                    Try Again
+                                </button>
+                            </div>
+                        )}
+                        {!showManualInput && stage === 'waiting' && (
                             <div className="flex flex-col items-center gap-4 mt-8">
                                 <Loader2 className="h-10 w-10 text-blue-400 animate-spin" />
                                 <span className="text-blue-700 font-semibold text-lg">Bot is thinking...</span>
